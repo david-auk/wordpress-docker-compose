@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    restart: always
+    command:
+      - "--providers.docker=true"
+      - "--providers.file.directory=/etc/traefik"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.dashboard.address=127.0.0.1:8080" # Restrict dashboard to localhost
+      - "--api.dashboard=true"
+      - "--certificatesresolvers.le.acme.dnschallenge=true"
+      - "--certificatesresolvers.le.acme.dnschallenge.provider=transip"
+      - "--certificatesresolvers.le.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080" # TODO Add working dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik:/etc/traefik
+      - ./traefik/letsencrypt:/letsencrypt
+    environment:
+      - ACME_EMAIL=${ACME_EMAIL}
+      - TRANSIP_ACCOUNT_NAME=${TRANSIP_ACCOUNT_NAME}
+      - TRANSIP_PRIVATE_KEY_PATH=/etc/traefik/transip.key
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.service=api@internal"
+
+  database:
+    container_name: wordpress_database
+    build:
+      context: database
+      args:
+        SAMMASKE_DB_NAME: ${SAMMASKE_DB_NAME}
+        SAMMASKE_DB_USER: ${SAMMASKE_DB_USER}
+        SAMMASKE_DB_PASSWORD: ${SAMMASKE_DB_PASSWORD}
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - ./database/server:/var/lib/mysql
+
+  wordpress_sammaske:
+    image: wordpress:latest
+    container_name: wordpress_sammaske_app
+    restart: always
+    environment:
+      WORDPRESS_DB_HOST: database:3306
+      WORDPRESS_DB_USER: ${SAMMASKE_DB_USER}
+      WORDPRESS_DB_PASSWORD: ${SAMMASKE_DB_PASSWORD}
+      WORDPRESS_DB_NAME: ${SAMMASKE_DB_NAME}
+    volumes:
+      - ./wordpress/sammaske:/var/www/html
+    depends_on:
+      - database
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wordpress.rule=${SAMMASKE_ROUTE_RULE}"
+      - "traefik.http.routers.wordpress.entrypoints=websecure"
+      - "traefik.http.routers.wordpress.tls.certresolver=le"
