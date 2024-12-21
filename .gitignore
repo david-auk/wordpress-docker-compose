@@ -1,0 +1,9 @@
+
+# The Mysql config: /var/lib/mysql
+database/server
+
+# Existing content
+wordpress
+
+# Secrets
+.env
